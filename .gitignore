@@ -1,0 +1,87 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Visual Studio Code related
+.vscode/
+.history/
+*.code-workspace
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+/coverage/
+/test/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Exceptions to above
+!/android/app/src/main/res/drawable-mdpi/ic_launcher.png
+!/android/app/src/main/res/drawable-hdpi/ic_launcher.png
+!/android/app/src/main/res/drawable-xhdpi/ic_launcher.png
+!/android/app/src/main/res/drawable-xxhdpi/ic_launcher.png
+!/android/app/src/main/res/drawable-xxxhdpi/ic_launcher.png
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Android specific
+/android/local.properties
+/android/key.properties
+*.jks
+*.keystore
+*.key
+*.pem
+*.certificate
+backup.keystore
+assets/key-*.json
+
+# iOS specific
+*.swiftdoc
+*.swiftmodule
+*.swiftsourceinfo
+/ios/Pods/
+/ios/.externalbuilder/
+/ios/DerivedData/
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/flutter_export_environment.sh
+/ios/Flutter/Flutter.podspec
+/ios/ServiceDefinitions.json
+/ios/Runner/GeneratedPluginRegistrant.[mh]
+
+# Large model files
+assets/models/
+
+# Secret files
+.env*
+*.env
+secret.yaml
