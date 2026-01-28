@@ -1,0 +1,146 @@
+# Fastlane configuration for My Day app
+# Documentation: https://docs.fastlane.tools
+
+default_platform(:ios)
+
+# Project root directory (one level up from ios/)
+PROJECT_ROOT = File.expand_path("../..", __dir__)
+IPA_PATH = File.join(PROJECT_ROOT, "build/ios/ipa/my_day.ipa")
+
+# Load App Store Connect API Key if available
+def load_api_key
+  if ENV["APP_STORE_CONNECT_API_KEY_KEY_ID"] && 
+     ENV["APP_STORE_CONNECT_API_KEY_ISSUER_ID"] && 
+     ENV["APP_STORE_CONNECT_API_KEY_KEY_FILEPATH"]
+    
+    app_store_connect_api_key(
+      key_id: ENV["APP_STORE_CONNECT_API_KEY_KEY_ID"],
+      issuer_id: ENV["APP_STORE_CONNECT_API_KEY_ISSUER_ID"],
+      key_filepath: ENV["APP_STORE_CONNECT_API_KEY_KEY_FILEPATH"],
+      in_house: false
+    )
+  else
+    UI.important("⚠️  No API key configured. Will use Apple ID authentication.")
+    UI.message("Set up API key in ios/fastlane/.env for automated deployments.")
+  end
+end
+
+platform :ios do
+  
+  before_all do
+    # Load .env file if it exists
+    Dotenv.load("fastlane/.env") if File.exist?("fastlane/.env")
+  end
+
+  desc "Build the Flutter app"
+  private_lane :build_flutter do
+    # Clean and get dependencies
+    Dir.chdir(PROJECT_ROOT) do
+      sh("flutter clean")
+      sh("flutter pub get")
+    end
+  end
+
+  desc "Build IPA for release"
+  lane :build do
+    build_flutter
+    
+    # Build the IPA using Flutter
+    Dir.chdir(PROJECT_ROOT) do
+      sh("flutter build ipa --release")
+    end
+    
+    UI.success("✅ IPA built successfully!")
+    UI.message("IPA location: #{IPA_PATH}")
+  end
+
+  desc "Upload to TestFlight"
+  lane :beta do
+    build_flutter
+    
+    # Build the IPA
+    Dir.chdir(PROJECT_ROOT) do
+      sh("flutter build ipa --release")
+    end
+    
+    # Load API key
+    load_api_key
+    
+    # Upload to TestFlight
+    upload_to_testflight(
+      ipa: IPA_PATH,
+      skip_waiting_for_build_processing: true,
+      skip_submission: true,
+      notify_external_testers: false
+    )
+    
+    UI.success("✅ Successfully uploaded to TestFlight!")
+  end
+
+  desc "Upload to TestFlight without building (use existing IPA)"
+  lane :upload_testflight do
+    # Load API key
+    load_api_key
+    
+    upload_to_testflight(
+      ipa: IPA_PATH,
+      skip_waiting_for_build_processing: true,
+      skip_submission: true,
+      notify_external_testers: false
+    )
+    
+    UI.success("✅ Successfully uploaded to TestFlight!")
+  end
+
+  desc "Submit to App Store for review"
+  lane :release do
+    build_flutter
+    
+    # Build the IPA
+    Dir.chdir(PROJECT_ROOT) do
+      sh("flutter build ipa --release")
+    end
+    
+    # Load API key
+    load_api_key
+    
+    # Upload to App Store Connect
+    upload_to_app_store(
+      ipa: IPA_PATH,
+      skip_metadata: true,
+      skip_screenshots: true,
+      submit_for_review: false,  # Set to true for automatic submission
+      automatic_release: false,  # Set to true for automatic release after approval
+      precheck_include_in_app_purchases: false
+    )
+    
+    UI.success("✅ Successfully uploaded to App Store Connect!")
+  end
+
+  desc "Increment build number"
+  lane :bump do
+    # Get current build number and increment
+    build_number = increment_build_number(
+      xcodeproj: "Runner.xcodeproj"
+    )
+    
+    UI.success("✅ Build number incremented to #{build_number}")
+  end
+
+  desc "Full TestFlight deployment with build number increment"
+  lane :deploy_testflight do
+    bump
+    beta
+    
+    UI.success("🚀 Deployment complete!")
+  end
+
+  desc "Full App Store deployment with build number increment"
+  lane :deploy_appstore do
+    bump
+    release
+    
+    UI.success("🚀 App Store deployment complete!")
+  end
+
+end

@@ -1,0 +1,11 @@
+# App Identifier (Bundle ID)
+app_identifier("com.algoclouds.serein")
+
+# Apple ID
+apple_id(ENV["APPLE_ID"] || "your-apple-id@email.com")
+
+# Team ID  
+team_id("B7MQS4W75C")
+
+# For App Store Connect API (recommended for CI/CD)
+# itc_team_id("your_itc_team_id") # App Store Connect Team ID (numbers only)
