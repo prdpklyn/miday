@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:my_day/presentation/providers/chat_provider.dart';
+import 'package:my_day/presentation/providers/voice_provider.dart';
 import 'package:my_day/services/ai/chat_service.dart';
 
 class FloatingAIButton extends ConsumerWidget {
@@ -63,14 +64,26 @@ class AIChatOverlay extends ConsumerStatefulWidget {
   ConsumerState<AIChatOverlay> createState() => _AIChatOverlayState();
 }
 
-class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
+class _AIChatOverlayState extends ConsumerState<AIChatOverlay>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+  }
 
   @override
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -87,15 +100,21 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
   @override
   Widget build(BuildContext context) {
     final chatAsync = ref.watch(chatProvider);
+    final voiceAsync = ref.watch(voiceProvider);
 
     return chatAsync.when(
-      data: (chatState) => _buildChatUI(context, chatState),
+      data: (chatState) => voiceAsync.when(
+        data: (voiceState) => _buildChatUI(context, chatState, voiceState),
+        loading: () => _buildChatUI(context, chatState, const VoiceState()),
+        error: (_, __) => _buildChatUI(context, chatState, const VoiceState()),
+      ),
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, stack) => Center(child: Text('Error: $error')),
     );
   }
 
-  Widget _buildChatUI(BuildContext context, ChatState chatState) {
+  Widget _buildChatUI(
+      BuildContext context, ChatState chatState, VoiceState voiceState) {
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
       decoration: BoxDecoration(
@@ -115,38 +134,8 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
             ),
           ),
 
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF8B7CF6), Color(0xFF4EA8DE)],
-                    ),
-                  ),
-                  child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  'AI Assistant',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-          ),
+          // Header with voice mode toggle
+          _buildHeader(voiceState),
 
           // Messages
           Expanded(
@@ -163,84 +152,319 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
                   ),
           ),
 
-          // Loading indicator
-          if (chatState.isLoading)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Color(0xFF8B7CF6)),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text('Thinking...'),
-                ],
+          // Loading/Recording/Transcribing indicator
+          _buildStatusIndicator(chatState, voiceState),
+
+          // Input field with voice button
+          _buildInputArea(voiceState),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(VoiceState voiceState) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [Color(0xFF8B7CF6), Color(0xFF4EA8DE)],
               ),
             ),
+            child:
+                const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'AI Assistant',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          // Voice mode toggle
+          IconButton(
+            icon: Icon(
+              voiceState.isVoiceModeEnabled
+                  ? Icons.volume_up
+                  : Icons.volume_off,
+              color: voiceState.isVoiceModeEnabled
+                  ? const Color(0xFF8B7CF6)
+                  : Colors.grey,
+            ),
+            tooltip: voiceState.isVoiceModeEnabled
+                ? 'Voice mode on'
+                : 'Voice mode off',
+            onPressed: () {
+              ref.read(voiceProvider.notifier).toggleVoiceMode();
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
 
-          // Input field
-          Container(
-            padding: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-              top: 16,
-            ),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
+  Widget _buildStatusIndicator(ChatState chatState, VoiceState voiceState) {
+    // Show recording indicator
+    if (voiceState.isRecording) {
+      return AnimatedBuilder(
+        animation: _pulseController,
+        builder: (context, child) {
+          return Container(
+            padding: const EdgeInsets.all(16),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: InputDecoration(
-                      hintText: 'Type a message...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey[50],
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
-                      ),
-                    ),
-                    onSubmitted: (_) => _sendMessage(),
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.red
+                        .withOpacity(0.5 + _pulseController.value * 0.5),
                   ),
                 ),
                 const SizedBox(width: 12),
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF8B7CF6), Color(0xFF4EA8DE)],
-                    ),
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.send, color: Colors.white),
-                    onPressed: _sendMessage,
-                  ),
+                const Text(
+                  'Recording... Tap mic to stop',
+                  style: TextStyle(color: Colors.red),
                 ),
               ],
+            ),
+          );
+        },
+      );
+    }
+
+    // Show transcribing indicator
+    if (voiceState.isTranscribing) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor:
+                    AlwaysStoppedAnimation(Colors.orange.withOpacity(0.8)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Transcribing...',
+              style: TextStyle(color: Colors.orange),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Show speaking indicator
+    if (voiceState.isSpeaking) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.volume_up, color: const Color(0xFF8B7CF6), size: 20),
+            const SizedBox(width: 12),
+            const Text(
+              'Speaking...',
+              style: TextStyle(color: Color(0xFF8B7CF6)),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => ref.read(voiceProvider.notifier).stopSpeaking(),
+              child: const Text('Stop'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Show thinking indicator
+    if (chatState.isLoading) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor:
+                    AlwaysStoppedAnimation(const Color(0xFF8B7CF6)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('Thinking...'),
+          ],
+        ),
+      );
+    }
+
+    // Show error if any
+    if (voiceState.error != null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                voiceState.error!,
+                style: const TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 16),
+              onPressed: () => ref.read(voiceProvider.notifier).clearError(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildInputArea(VoiceState voiceState) {
+    return Container(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        top: 16,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              decoration: InputDecoration(
+                hintText: voiceState.isRecording
+                    ? 'Recording...'
+                    : 'Type or tap mic to speak...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                filled: true,
+                fillColor: Colors.grey[50],
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+              ),
+              onSubmitted: (_) => _sendMessage(),
+              enabled: !voiceState.isRecording && !voiceState.isTranscribing,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Microphone button
+          _buildMicButton(voiceState),
+          const SizedBox(width: 8),
+          // Send button
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF8B7CF6), Color(0xFF4EA8DE)],
+              ),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.send, color: Colors.white),
+              onPressed: voiceState.isProcessing ? null : _sendMessage,
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildMicButton(VoiceState voiceState) {
+    final isRecording = voiceState.isRecording;
+    final isProcessing = voiceState.isTranscribing;
+
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isRecording
+                ? Colors.red.withOpacity(0.8 + _pulseController.value * 0.2)
+                : isProcessing
+                    ? Colors.orange
+                    : Colors.grey[200],
+          ),
+          child: IconButton(
+            icon: Icon(
+              isRecording
+                  ? Icons.stop
+                  : isProcessing
+                      ? Icons.hourglass_top
+                      : Icons.mic,
+              color: isRecording || isProcessing ? Colors.white : Colors.grey[700],
+            ),
+            onPressed: isProcessing ? null : _handleMicPress,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _handleMicPress() async {
+    final voiceNotifier = ref.read(voiceProvider.notifier);
+    final voiceAsync = ref.read(voiceProvider);
+    final voiceState = voiceAsync.hasValue ? voiceAsync.value : null;
+
+    if (voiceState?.isRecording ?? false) {
+      // Stop recording and get transcription
+      final transcription = await voiceNotifier.stopRecording();
+      if (transcription != null && transcription.isNotEmpty) {
+        _controller.text = transcription;
+        // Auto-send if voice mode is enabled
+        final voiceAsyncNow = ref.read(voiceProvider);
+        final isVoiceMode = voiceAsyncNow.hasValue && voiceAsyncNow.value!.isVoiceModeEnabled;
+        if (isVoiceMode) {
+          _sendMessage();
+        }
+      }
+    } else {
+      // Start recording
+      await voiceNotifier.startRecording();
+    }
   }
 
   Widget _buildEmptyState() {
@@ -253,7 +477,7 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
             height: 80,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Color(0xFF8B7CF6).withOpacity(0.1),
+              color: const Color(0xFF8B7CF6).withOpacity(0.1),
             ),
             child: const Icon(
               Icons.auto_awesome,
@@ -277,7 +501,7 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
           const SizedBox(height: 16),
           _buildSuggestionChip('Add a task'),
           _buildSuggestionChip('Schedule an event'),
-          _buildSuggestionChip('Take a note'),
+          _buildSuggestionChip("What's my schedule?"),
         ],
       ),
     );
@@ -306,9 +530,8 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
           maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
         decoration: BoxDecoration(
-          color: message.isUser
-              ? const Color(0xFF8B7CF6)
-              : Colors.grey[100],
+          color:
+              message.isUser ? const Color(0xFF8B7CF6) : Colors.grey[100],
           borderRadius: BorderRadius.circular(16),
         ),
         child: Text(
@@ -322,21 +545,37 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
     );
   }
 
-  void _sendMessage() {
+  void _sendMessage() async {
     if (_controller.text.trim().isEmpty) return;
 
+    final messageText = _controller.text;
+    _controller.clear();
+
     final navigationHandler = ref.read(navigationHandlerProvider);
-    ref.read(chatProvider.notifier).sendMessage(
-      _controller.text,
+    await ref.read(chatProvider.notifier).sendMessage(
+      messageText,
       onNavigationIntent: (String destination) {
         navigationHandler.navigateTo(context, destination);
         Navigator.of(context).pop();
       },
     );
 
-    _controller.clear();
-    
     // Scroll to bottom after message is added
     Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
+
+    // Speak the AI response if voice mode is enabled
+    final voiceAsync = ref.read(voiceProvider);
+    final isVoiceMode = voiceAsync.hasValue && voiceAsync.value!.isVoiceModeEnabled;
+    if (isVoiceMode) {
+      // Wait a bit for the response to be added
+      await Future.delayed(const Duration(milliseconds: 500));
+      final chatAsync = ref.read(chatProvider);
+      if (chatAsync.hasValue && chatAsync.value!.messages.isNotEmpty) {
+        final lastMessage = chatAsync.value!.messages.last;
+        if (!lastMessage.isUser) {
+          await ref.read(voiceProvider.notifier).speak(lastMessage.text);
+        }
+      }
+    }
   }
 }

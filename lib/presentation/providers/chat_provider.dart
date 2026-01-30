@@ -85,8 +85,10 @@ class ChatNotifier extends AsyncNotifier<ChatState> {
   Future<void> sendMessage(String text, {void Function(String destination)? onNavigationIntent}) async {
     if (text.trim().isEmpty) return;
 
-    // Add user message
+    // Add user message to chat service and conversation manager
     _chatService.addUserMessage(text);
+    _aiService.conversationManager.addUserMessage(text);
+
     state = AsyncValue.data(ChatState(
       messages: _chatService.messages,
       isLoading: true,
@@ -97,7 +99,9 @@ class ChatNotifier extends AsyncNotifier<ChatState> {
       if (_navigationHandler.hasNavigationIntent(text)) {
         final destination = _navigationHandler.extractDestination(text);
         if (destination != null) {
-          _chatService.addAIMessage('Opening $destination...');
+          final response = 'Opening $destination...';
+          _chatService.addAIMessage(response);
+          _aiService.conversationManager.addAssistantMessage(response);
           state = AsyncValue.data(ChatState(
             messages: _chatService.messages,
             isLoading: false,
@@ -107,14 +111,28 @@ class ChatNotifier extends AsyncNotifier<ChatState> {
         }
       }
 
-      // Process with smart query (includes intent classification)
-      final context = _chatService.getConversationContext();
-      final result = await _aiService.processSmartQuery(text, conversationContext: context);
+      // Get conversation history for context
+      final conversationHistory = _aiService.conversationManager.getRecentHistory(turns: 4);
 
-      // Handle conversational intents (no function execution needed)
-      if (result.conversationalIntent != null && !result.needsFunctionExecution) {
+      // Process with smart query (includes intent classification AND conversation)
+      final result = await _aiService.processSmartQuery(text, conversationContext: conversationHistory);
+
+      // Handle simple conversational intents (template responses)
+      if (result.conversationalIntent != null && !result.needsFunctionExecution && !result.hasConversationalResponse) {
         final response = _responseGenerator.conversationalResponse(result.conversationalIntent!);
         _chatService.addAIMessage(response);
+        _aiService.conversationManager.addAssistantMessage(response);
+        state = AsyncValue.data(ChatState(
+          messages: _chatService.messages,
+          isLoading: false,
+        ));
+        return;
+      }
+
+      // Handle LLM conversational response (actual AI conversation)
+      if (result.hasConversationalResponse) {
+        _chatService.addAIMessage(result.conversationalResponse!);
+        _aiService.conversationManager.addAssistantMessage(result.conversationalResponse!);
         state = AsyncValue.data(ChatState(
           messages: _chatService.messages,
           isLoading: false,
@@ -125,15 +143,16 @@ class ChatNotifier extends AsyncNotifier<ChatState> {
       // Handle function execution (actions or queries)
       if (result.needsFunctionExecution && result.functionJson != null) {
         final funcResult = await _functionHandler.handleExecution(result.functionJson!);
-        
+
         // Refresh providers for data changes
         ref.invalidate(tasksProvider);
         ref.invalidate(eventsProvider);
         ref.invalidate(notesProvider);
-        
+
         // Generate natural response based on function result
         final response = _generateResponseForResult(funcResult);
         _chatService.addAIMessage(response);
+        _aiService.conversationManager.addAssistantMessage(response);
         state = AsyncValue.data(ChatState(
           messages: _chatService.messages,
           isLoading: false,
@@ -142,14 +161,18 @@ class ChatNotifier extends AsyncNotifier<ChatState> {
       }
 
       // Fallback for unrecognized input
-      _chatService.addAIMessage(_responseGenerator.conversationalResponse('unknown'));
+      final fallbackResponse = _responseGenerator.conversationalResponse('unknown');
+      _chatService.addAIMessage(fallbackResponse);
+      _aiService.conversationManager.addAssistantMessage(fallbackResponse);
       state = AsyncValue.data(ChatState(
         messages: _chatService.messages,
         isLoading: false,
       ));
 
     } catch (e) {
-      _chatService.addAIMessage(_responseGenerator.errorResponse());
+      final errorResponse = _responseGenerator.errorResponse();
+      _chatService.addAIMessage(errorResponse);
+      _aiService.conversationManager.addAssistantMessage(errorResponse);
       state = AsyncValue.data(ChatState(
         messages: _chatService.messages,
         isLoading: false,
@@ -240,6 +263,7 @@ class ChatNotifier extends AsyncNotifier<ChatState> {
 
   void clearHistory() {
     _chatService.clearHistory();
+    _aiService.conversationManager.resetConversation();
     state = AsyncValue.data(ChatState());
   }
 }

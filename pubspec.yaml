@@ -43,6 +43,12 @@ dependencies:
   font_awesome_flutter: ^10.12.0
   flutter_gemma: ^0.12.2
 
+  # Voice support
+  whisper_flutter_new: ^1.0.1     # Local Whisper model for speech-to-text
+  flutter_tts: ^4.2.0              # Text-to-speech
+  record: ^5.1.2                   # Audio recording
+  path_provider: ^2.1.5            # For temp file storage
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -94,3 +100,6 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+dependency_overrides:
+  record_linux: ^1.2.1
