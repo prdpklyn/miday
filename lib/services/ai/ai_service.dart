@@ -1,20 +1,26 @@
 import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:my_day/services/ai/conversation_manager.dart';
 
 /// Result containing both function call and conversation details
 class SmartQueryResult {
   final String? functionJson;
   final String? conversationalIntent;
+  final String? conversationalResponse; // Actual LLM response for conversation
   final bool isQuery;
   final bool isAction;
+  final bool isConversation;
 
   SmartQueryResult({
     this.functionJson,
     this.conversationalIntent,
+    this.conversationalResponse,
     this.isQuery = false,
     this.isAction = false,
+    this.isConversation = false,
   });
 
   bool get needsFunctionExecution => functionJson != null && (isAction || isQuery);
+  bool get hasConversationalResponse => conversationalResponse != null && conversationalResponse!.isNotEmpty;
 }
 
 class AIService {
@@ -23,9 +29,13 @@ class AIService {
   InferenceModel? _model;
   String? _lastError;
 
+  // Conversation manager for persistent context
+  final ConversationManager _conversationManager = ConversationManager();
+
   // Debug getter
   bool get isInitialized => _isInitialized;
   String? get lastError => _lastError;
+  ConversationManager get conversationManager => _conversationManager;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -79,17 +89,122 @@ class AIService {
       );
     }
 
-    // Step 3: Use LLM for action classification
-    final functionJson = await processQuery(query);
-    if (functionJson != null) {
-      return SmartQueryResult(
-        functionJson: functionJson,
-        isAction: true,
-      );
+    // Step 3: Use LLM with conversation context for intelligent response
+    // This now handles BOTH function calls AND conversational responses
+    final result = await processConversationalQuery(query, conversationContext: conversationContext);
+    return result;
+  }
+
+  /// Process query with full conversation context - returns function OR conversation
+  Future<SmartQueryResult> processConversationalQuery(String query, {String? conversationContext}) async {
+    // Ensure initialization
+    if (!_isInitialized || _model == null) {
+      await initialize();
+      if (!_isInitialized || _model == null) {
+        return SmartQueryResult(conversationalIntent: 'unknown');
+      }
     }
 
-    // Step 4: Fallback - treat as unknown intent
-    return SmartQueryResult(conversationalIntent: 'unknown');
+    // Build the conversation-aware prompt
+    final now = DateTime.now();
+    final dayName = _weekdayName(now.weekday);
+
+    // Include conversation history if available
+    final historySection = (conversationContext != null && conversationContext.isNotEmpty)
+        ? '''
+Previous conversation:
+$conversationContext
+
+'''
+        : '';
+
+    final prompt = '''SYSTEM: You are a helpful personal assistant for a day planning app called "My Day".
+
+Current Time: $dayName, ${now.toIso8601String()}
+
+$historySection
+Available Functions (use ONLY when the user wants to create something):
+- create_task: {"name": "create_task", "arguments": {"title": string, "priority": "high"|"medium"|"low", "due_date": ISO-8601 or null}}
+- create_event: {"name": "create_event", "arguments": {"title": string, "start_time": ISO-8601, "duration_minutes": int}}
+- create_note: {"name": "create_note", "arguments": {"title": string, "content": string, "tags": string[]}}
+
+Time References:
+- "tomorrow" -> ${now.add(const Duration(days: 1)).toIso8601String().split('T')[0]}
+- "next week" -> ${now.add(const Duration(days: 7)).toIso8601String().split('T')[0]}
+
+Instructions:
+1. If the user is asking you to CREATE a task, event, or note -> respond with ONLY the JSON function call
+2. If the user is having a conversation, asking questions, or chatting -> respond naturally as a friendly assistant
+3. If the user references something from the conversation history, use that context
+4. Keep responses concise and helpful
+
+User: $query
+
+Response:''';
+
+    InferenceChat? chat;
+
+    try {
+      chat = await _model!.createChat();
+
+      await chat.addQueryChunk(Message.text(
+        text: prompt,
+        isUser: true,
+      ));
+
+      final StringBuffer fullResponse = StringBuffer();
+
+      await for (final response in chat.generateChatResponseAsync()) {
+        if (response is TextResponse) {
+          fullResponse.write(response.token);
+        } else if (response is FunctionCallResponse) {
+          final funcJson = '{"name": "${response.name}", "arguments": ${response.args}}';
+          print("🤖 AI Function Call (Native): $funcJson");
+          return SmartQueryResult(functionJson: funcJson, isAction: true);
+        }
+      }
+
+      final responseText = fullResponse.toString().trim();
+      print("🤖 AI Response: $responseText");
+
+      // Check if response contains a function call
+      final functionJson = _extractFunctionCall(responseText);
+      if (functionJson != null) {
+        return SmartQueryResult(functionJson: functionJson, isAction: true);
+      }
+
+      // Otherwise, it's a conversational response
+      final cleanedResponse = _cleanConversationalResponse(responseText);
+      if (cleanedResponse.isNotEmpty) {
+        return SmartQueryResult(
+          conversationalResponse: cleanedResponse,
+          isConversation: true,
+        );
+      }
+
+      // Fallback
+      return SmartQueryResult(conversationalIntent: 'unknown');
+
+    } catch (e, stack) {
+      print("❌ Error in conversational query: $e");
+      print(stack);
+      return SmartQueryResult(conversationalIntent: 'unknown');
+    }
+  }
+
+  /// Clean up LLM response for display
+  String _cleanConversationalResponse(String response) {
+    var cleaned = response.trim();
+
+    // Remove any "Assistant:" prefix the model might add
+    if (cleaned.toLowerCase().startsWith('assistant:')) {
+      cleaned = cleaned.substring(10).trim();
+    }
+
+    // Remove markdown artifacts
+    cleaned = cleaned.replaceAll(RegExp(r'```\w*\n?'), '');
+
+    return cleaned;
   }
 
   /// Detect simple conversational patterns without LLM
