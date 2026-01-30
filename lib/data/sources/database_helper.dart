@@ -14,7 +14,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('cadence.db');
+    _database = await _initDB('miday.db');
     return _database!;
   }
 

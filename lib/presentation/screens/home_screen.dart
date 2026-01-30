@@ -35,7 +35,7 @@ class HomeScreen extends ConsumerWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text("My Day", style: AppTheme.heading1),
+                            Text("Mi-day", style: AppTheme.heading1),
                             const SizedBox(height: 4),
                             Text(dateString, style: AppTheme.bodyRegular),
                           ],

@@ -1,6 +1,6 @@
-# my_day
+# Mi-day
 
-A new Flutter project.
+A Flutter daily planning and productivity app.
 
 ## Getting Started
 
