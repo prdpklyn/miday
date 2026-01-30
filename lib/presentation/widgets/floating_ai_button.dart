@@ -325,13 +325,12 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
   void _sendMessage() {
     if (_controller.text.trim().isEmpty) return;
 
+    final navigationHandler = ref.read(navigationHandlerProvider);
     ref.read(chatProvider.notifier).sendMessage(
       _controller.text,
-      onNavigationIntent: () {
-        // Close chat and navigate
-        Future.delayed(const Duration(milliseconds: 500), () {
-          Navigator.of(context).pop();
-        });
+      onNavigationIntent: (String destination) {
+        navigationHandler.navigateTo(context, destination);
+        Navigator.of(context).pop();
       },
     );
 
