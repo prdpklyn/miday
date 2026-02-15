@@ -1,227 +1,155 @@
 
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import 'package:my_day/data/models/task_model.dart';
+import 'package:drift/drift.dart';
 import 'package:my_day/data/models/event_model.dart';
-import 'package:my_day/data/models/note_model.dart';
 import 'package:my_day/data/models/habit_model.dart';
+import 'package:my_day/data/models/note_model.dart';
+import 'package:my_day/data/models/task_model.dart';
+import 'package:my_day/data/sources/app_database.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
-  static Database? _database;
-
-  DatabaseHelper._init();
-
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDB('miday.db');
-    return _database!;
-  }
-
-  Future<Database> _initDB(String filePath) async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, filePath);
-
-    return await openDatabase(path, version: 1, onCreate: _createDB);
-  }
-
-  Future<void> _createDB(Database db, int version) async {
-    // Tasks Table
-    await db.execute('''
-      CREATE TABLE tasks (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        description TEXT,
-        priority INTEGER NOT NULL,
-        isCompleted INTEGER NOT NULL,
-        createdAt TEXT NOT NULL,
-        dueDate TEXT
-      )
-    ''');
-
-    // Events Table
-    await db.execute('''
-      CREATE TABLE events (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        description TEXT,
-        startTime TEXT NOT NULL,
-        durationMinutes INTEGER NOT NULL,
-        color TEXT
-      )
-    ''');
-
-    // Notes Table
-    await db.execute('''
-      CREATE TABLE notes (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        tags TEXT NOT NULL,
-        createdAt TEXT NOT NULL,
-        backgroundColor TEXT
-      )
-    ''');
-
-    // Habits Table
-    await db.execute('''
-      CREATE TABLE habits (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        icon TEXT,
-        frequency INTEGER NOT NULL,
-        streakCount INTEGER NOT NULL,
-        createdAt TEXT NOT NULL
-      )
-    ''');
-
-    // Habit Logs Table
-    await db.execute('''
-      CREATE TABLE habit_logs (
-        id TEXT PRIMARY KEY,
-        habitId TEXT NOT NULL,
-        completedAt TEXT NOT NULL,
-        FOREIGN KEY (habitId) REFERENCES habits (id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  // --- CRUD Operations ---
-
-  // Tasks
+  final AppDatabase _database;
+  DatabaseHelper._init() : _database = AppDatabase();
   Future<String> createTask(TaskModel task) async {
-    final db = await instance.database;
-    await db.insert('tasks', task.toMap());
+    await _database.insertTask(TasksCompanion.insert(
+      id: task.id,
+      title: task.title,
+      dueDate: Value(task.dueDate),
+      dueTime: Value(task.dueTime),
+      priority: Value(_mapPriority(task.priority)),
+      category: Value(task.category),
+      completed: Value(task.isCompleted),
+      linkedEventId: Value(task.linkedEventId),
+    ));
     return task.id;
   }
-
   Future<List<TaskModel>> getAllTasks() async {
-    final db = await instance.database;
-    final result = await db.query('tasks', orderBy: 'createdAt DESC');
-    return result.map((json) => TaskModel.fromMap(json)).toList();
+    final List<Task> tasks = await (_database.select(_database.tasks)
+          ..orderBy([(Tasks t) => OrderingTerm.desc(t.createdAt)]))
+        .get();
+    return tasks.map(_mapTask).toList();
   }
-  
   Future<void> updateTask(TaskModel task) async {
-    final db = await instance.database;
-    await db.update(
-      'tasks', 
-      task.toMap(), 
-      where: 'id = ?', 
-      whereArgs: [task.id]
+    final TasksCompanion update = TasksCompanion(
+      title: Value(task.title),
+      dueDate: Value(task.dueDate),
+      dueTime: Value(task.dueTime),
+      priority: Value(_mapPriority(task.priority)),
+      category: Value(task.category),
+      completed: Value(task.isCompleted),
+      linkedEventId: Value(task.linkedEventId),
+      updatedAt: Value(DateTime.now()),
     );
+    await (_database.update(_database.tasks)..where((Tasks t) => t.id.equals(task.id))).write(update);
   }
-
   Future<void> deleteTask(String id) async {
-    final db = await instance.database;
-    await db.delete('tasks', where: 'id = ?', whereArgs: [id]);
+    await (_database.delete(_database.tasks)..where((Tasks t) => t.id.equals(id))).go();
   }
-
-  // Events
   Future<String> createEvent(EventModel event) async {
-    final db = await instance.database;
-    await db.insert('events', event.toMap());
+    await _database.insertEvent(EventsCompanion.insert(
+      id: event.id,
+      title: event.title,
+      date: event.date,
+      startTime: event.startTime,
+      endTime: Value(event.endTime),
+      location: Value(event.location),
+      attendees: Value(event.attendees?.join(',')),
+      color: Value(event.color ?? 'blue'),
+    ));
     return event.id;
   }
-
   Future<List<EventModel>> getAllEvents() async {
-    final db = await instance.database;
-    final result = await db.query('events', orderBy: 'startTime ASC');
-    return result.map((json) => EventModel.fromMap(json)).toList();
+    final List<Event> events = await (_database.select(_database.events)
+          ..orderBy([(Events e) => OrderingTerm.asc(e.startTime)]))
+        .get();
+    return events.map(_mapEvent).toList();
   }
-
   Future<void> deleteEvent(String id) async {
-    final db = await instance.database;
-    await db.delete('events', where: 'id = ?', whereArgs: [id]);
+    await (_database.delete(_database.events)..where((Events e) => e.id.equals(id))).go();
   }
-
-  // Notes
   Future<String> createNote(NoteModel note) async {
-    final db = await instance.database;
-    await db.insert('notes', note.toMap());
+    await _database.insertNote(NotesCompanion.insert(
+      id: note.id,
+      title: Value(note.title),
+      content: note.content,
+      tags: Value(note.tags.join(',')),
+      linkedEventId: Value(note.linkedEventId),
+      linkedTaskId: Value(note.linkedTaskId),
+    ));
     return note.id;
   }
-
   Future<List<NoteModel>> getAllNotes() async {
-    final db = await instance.database;
-    final result = await db.query('notes', orderBy: 'createdAt DESC');
-    return result.map((json) => NoteModel.fromMap(json)).toList();
+    final List<Note> notes = await (_database.select(_database.notes)
+          ..orderBy([(Notes n) => OrderingTerm.desc(n.createdAt)]))
+        .get();
+    return notes.map(_mapNote).toList();
   }
-
   Future<void> deleteNote(String id) async {
-    final db = await instance.database;
-    await db.delete('notes', where: 'id = ?', whereArgs: [id]);
+    await (_database.delete(_database.notes)..where((Notes n) => n.id.equals(id))).go();
   }
-
-  // Habits
   Future<String> createHabit(HabitModel habit) async {
-    final db = await instance.database;
-    await db.insert('habits', habit.toMap());
+    await _database.into(_database.habits).insert(HabitsCompanion.insert(
+      id: habit.id,
+      title: habit.title,
+      icon: Value(habit.icon),
+      frequency: habit.frequency.index,
+      streakCount: habit.streakCount,
+      createdAt: habit.createdAt,
+    ));
     return habit.id;
   }
-
   Future<List<HabitModel>> getAllHabits() async {
-    final db = await instance.database;
-    final result = await db.query('habits', orderBy: 'createdAt ASC');
-    return result.map((json) => HabitModel.fromMap(json)).toList();
+    final List<Habit> habits = await (_database.select(_database.habits)
+          ..orderBy([(Habits h) => OrderingTerm.asc(h.createdAt)]))
+        .get();
+    return habits.map(_mapHabit).toList();
   }
-
   Future<void> updateHabit(HabitModel habit) async {
-    final db = await instance.database;
-    await db.update(
-      'habits',
-      habit.toMap(),
-      where: 'id = ?',
-      whereArgs: [habit.id],
+    final HabitsCompanion update = HabitsCompanion(
+      title: Value(habit.title),
+      icon: Value(habit.icon),
+      frequency: Value(habit.frequency.index),
+      streakCount: Value(habit.streakCount),
+      createdAt: Value(habit.createdAt),
     );
+    await (_database.update(_database.habits)..where((Habits h) => h.id.equals(habit.id))).write(update);
   }
-
   Future<void> deleteHabit(String id) async {
-    final db = await instance.database;
-    await db.delete('habits', where: 'id = ?', whereArgs: [id]);
+    await (_database.delete(_database.habits)..where((Habits h) => h.id.equals(id))).go();
   }
-
-  // Habit Logs
   Future<void> logHabitCompletion(HabitLog log) async {
-    final db = await instance.database;
-    await db.insert('habit_logs', log.toMap());
-    
-    // Update streak count
-    final habit = await getHabitById(log.habitId);
+    await _database.into(_database.habitLogs).insert(HabitLogsCompanion.insert(
+      id: log.id,
+      habitId: log.habitId,
+      completedAt: log.completedAt,
+    ));
+    final HabitModel? habit = await getHabitById(log.habitId);
     if (habit != null) {
-      final newStreak = await calculateStreak(log.habitId);
+      final int newStreak = await calculateStreak(log.habitId);
       await updateHabit(habit.copyWith(streakCount: newStreak));
     }
   }
-
   Future<HabitModel?> getHabitById(String id) async {
-    final db = await instance.database;
-    final result = await db.query('habits', where: 'id = ?', whereArgs: [id]);
-    if (result.isEmpty) return null;
-    return HabitModel.fromMap(result.first);
+    final Habit? habit = await (_database.select(_database.habits)..where((Habits h) => h.id.equals(id))).getSingleOrNull();
+    return habit == null ? null : _mapHabit(habit);
   }
-
   Future<List<HabitLog>> getHabitLogs(String habitId) async {
-    final db = await instance.database;
-    final result = await db.query(
-      'habit_logs',
-      where: 'habitId = ?',
-      whereArgs: [habitId],
-      orderBy: 'completedAt DESC',
-    );
-    return result.map((json) => HabitLog.fromMap(json)).toList();
+    final List<HabitLogEntry> logs = await (_database.select(_database.habitLogs)
+          ..where((HabitLogs h) => h.habitId.equals(habitId))
+          ..orderBy([(HabitLogs h) => OrderingTerm.desc(h.completedAt)]))
+        .get();
+    return logs.map((HabitLogEntry log) {
+      return HabitLog(id: log.id, habitId: log.habitId, completedAt: log.completedAt);
+    }).toList();
   }
-
   Future<int> calculateStreak(String habitId) async {
-    final logs = await getHabitLogs(habitId);
+    final List<HabitLog> logs = await getHabitLogs(habitId);
     if (logs.isEmpty) return 0;
-
     int streak = 0;
     DateTime lastDate = DateTime.now();
-    
-    for (var log in logs) {
-      final logDate = DateTime(log.completedAt.year, log.completedAt.month, log.completedAt.day);
-      final checkDate = DateTime(lastDate.year, lastDate.month, lastDate.day);
-      
+    for (final HabitLog log in logs) {
+      final DateTime logDate = DateTime(log.completedAt.year, log.completedAt.month, log.completedAt.day);
+      final DateTime checkDate = DateTime(lastDate.year, lastDate.month, lastDate.day);
       if (logDate == checkDate || logDate == checkDate.subtract(const Duration(days: 1))) {
         streak++;
         lastDate = logDate;
@@ -229,20 +157,86 @@ class DatabaseHelper {
         break;
       }
     }
-    
     return streak;
   }
-
   Future<List<DateTime>> getHabitCompletionDates(String habitId, {int days = 7}) async {
-    final db = await instance.database;
-    final cutoffDate = DateTime.now().subtract(Duration(days: days));
-    
-    final result = await db.query(
-      'habit_logs',
-      where: 'habitId = ? AND completedAt >= ?',
-      whereArgs: [habitId, cutoffDate.toIso8601String()],
+    final DateTime cutoffDate = DateTime.now().subtract(Duration(days: days));
+    final List<HabitLogEntry> logs = await (_database.select(_database.habitLogs)
+          ..where((HabitLogs h) => h.habitId.equals(habitId))
+          ..where((HabitLogs h) => h.completedAt.isBiggerThanValue(cutoffDate)))
+        .get();
+    return logs.map((HabitLogEntry log) => log.completedAt).toList();
+  }
+  String _mapPriority(TaskPriority priority) {
+    switch (priority) {
+      case TaskPriority.high:
+        return 'high';
+      case TaskPriority.low:
+        return 'low';
+      case TaskPriority.medium:
+        return 'medium';
+    }
+  }
+  TaskPriority _mapPriorityFromString(String priority) {
+    switch (priority) {
+      case 'high':
+        return TaskPriority.high;
+      case 'low':
+        return TaskPriority.low;
+      default:
+        return TaskPriority.medium;
+    }
+  }
+  TaskModel _mapTask(Task task) {
+    return TaskModel(
+      id: task.id,
+      title: task.title,
+      description: null,
+      priority: _mapPriorityFromString(task.priority),
+      isCompleted: task.completed,
+      createdAt: task.createdAt,
+      dueDate: task.dueDate,
+      dueTime: task.dueTime,
+      category: task.category,
+      linkedEventId: task.linkedEventId,
     );
-    
-    return result.map((log) => DateTime.parse(log['completedAt'] as String)).toList();
+  }
+  EventModel _mapEvent(Event event) {
+    final int? durationMinutes = event.endTime == null ? null : event.endTime!.difference(event.startTime).inMinutes;
+    return EventModel(
+      id: event.id,
+      title: event.title,
+      description: null,
+      date: event.date,
+      startTime: event.startTime,
+      endTime: event.endTime,
+      durationMinutes: durationMinutes,
+      location: event.location,
+      attendees: event.attendees?.split(',').where((String e) => e.isNotEmpty).toList(),
+      color: event.color,
+    );
+  }
+  NoteModel _mapNote(Note note) {
+    return NoteModel(
+      id: note.id,
+      title: note.title ?? '',
+      content: note.content,
+      tags: note.tags?.split(',').where((String e) => e.isNotEmpty).toList() ?? <String>[],
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+      backgroundColor: null,
+      linkedEventId: note.linkedEventId,
+      linkedTaskId: note.linkedTaskId,
+    );
+  }
+  HabitModel _mapHabit(Habit habit) {
+    return HabitModel(
+      id: habit.id,
+      title: habit.title,
+      icon: habit.icon,
+      frequency: HabitFrequency.values[habit.frequency],
+      streakCount: habit.streakCount,
+      createdAt: habit.createdAt,
+    );
   }
 }

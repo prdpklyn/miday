@@ -115,12 +115,15 @@ class FunctionHandler {
     final startTimeStr = args['start_time'];
     final duration = args['duration_minutes'] ?? 30;
 
-    final startTime = DateTime.tryParse(startTimeStr ?? '') ?? DateTime.now();
-
+    final DateTime startTime = DateTime.tryParse(startTimeStr ?? '') ?? DateTime.now();
+    final DateTime date = DateTime(startTime.year, startTime.month, startTime.day);
+    final DateTime? endTime = startTime.add(Duration(minutes: duration));
     final event = EventModel(
       id: _uuid.v4(),
       title: title,
+      date: date,
       startTime: startTime,
+      endTime: endTime,
       durationMinutes: duration,
     );
 

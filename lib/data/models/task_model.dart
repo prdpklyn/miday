@@ -9,6 +9,9 @@ class TaskModel {
   final bool isCompleted;
   final DateTime createdAt;
   final DateTime? dueDate;
+  final DateTime? dueTime;
+  final String? category;
+  final String? linkedEventId;
 
   TaskModel({
     required this.id,
@@ -18,6 +21,9 @@ class TaskModel {
     this.isCompleted = false,
     required this.createdAt,
     this.dueDate,
+    this.dueTime,
+    this.category,
+    this.linkedEventId,
   });
 
   Map<String, dynamic> toMap() {
@@ -29,6 +35,9 @@ class TaskModel {
       'isCompleted': isCompleted ? 1 : 0,
       'createdAt': createdAt.toIso8601String(),
       'dueDate': dueDate?.toIso8601String(),
+      'dueTime': dueTime?.toIso8601String(),
+      'category': category,
+      'linkedEventId': linkedEventId,
     };
   }
 
@@ -41,6 +50,9 @@ class TaskModel {
       isCompleted: map['isCompleted'] == 1,
       createdAt: DateTime.parse(map['createdAt']),
       dueDate: map['dueDate'] != null ? DateTime.parse(map['dueDate']) : null,
+      dueTime: map['dueTime'] != null ? DateTime.parse(map['dueTime']) : null,
+      category: map['category'],
+      linkedEventId: map['linkedEventId'],
     );
   }
 
@@ -50,6 +62,9 @@ class TaskModel {
     TaskPriority? priority,
     bool? isCompleted,
     DateTime? dueDate,
+    DateTime? dueTime,
+    String? category,
+    String? linkedEventId,
   }) {
     return TaskModel(
       id: id,
@@ -59,6 +74,9 @@ class TaskModel {
       isCompleted: isCompleted ?? this.isCompleted,
       createdAt: createdAt,
       dueDate: dueDate ?? this.dueDate,
+      dueTime: dueTime ?? this.dueTime,
+      category: category ?? this.category,
+      linkedEventId: linkedEventId ?? this.linkedEventId,
     );
   }
 }

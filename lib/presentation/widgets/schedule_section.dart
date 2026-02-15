@@ -1,12 +1,9 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:my_day/core/theme/app_theme.dart';
 import 'package:my_day/data/models/event_model.dart';
 import 'package:my_day/presentation/providers/data_providers.dart';
-import 'package:my_day/presentation/providers/home_state_provider.dart';
-import 'package:my_day/presentation/widgets/adaptive_section.dart';
 
 class ScheduleSection extends ConsumerWidget {
   const ScheduleSection({super.key});
@@ -14,41 +11,32 @@ class ScheduleSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final eventsAsync = ref.watch(eventsProvider);
-    final homeState = ref.watch(homeStateProvider);
 
     return eventsAsync.when(
       data: (events) {
-        return AdaptiveSection(
-          title: 'SCHEDULE',
-          itemCount: events.length,
-          isExpanded: homeState.isScheduleExpanded,
-          onToggle: () {
-            ref.read(homeStateProvider.notifier).state = homeState.copyWith(
-              isScheduleExpanded: !homeState.isScheduleExpanded,
-            );
-          },
-          trailing: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              shape: BoxShape.circle,
+        if (events.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Text(
+                'No events scheduled',
+                style: TextStyle(color: Colors.grey.shade500),
+              ),
             ),
-            child: Text(
-              events.length.toString(),
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-            ),
-          ),
-          child: events.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  child: Text('No events scheduled for today.', style: TextStyle(color: Colors.grey)),
-                )
-              : ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: homeState.isScheduleExpanded ? events.length : events.length.clamp(0, 3),
-                  itemBuilder: (context, index) => _EventCard(event: events[index]),
-                ),
+          );
+        }
+        
+        // Sort events by start time
+        final sortedEvents = List<EventModel>.from(events)
+          ..sort((a, b) => a.startTime.compareTo(b.startTime));
+        
+        return ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          itemCount: sortedEvents.length,
+          separatorBuilder: (context, index) => const SizedBox(height: 8),
+          itemBuilder: (context, index) => _EventCard(event: sortedEvents[index]),
         );
       },
       loading: () => const SizedBox(
@@ -70,42 +58,35 @@ class _EventCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final timeString = DateFormat('h:mm a').format(event.startTime);
+    
+    // Get duration either from explicit field or calculate from end time
+    final int duration;
+    if (event.durationMinutes != null) {
+      duration = event.durationMinutes!;
+    } else if (event.endTime != null) {
+      duration = event.endTime!.difference(event.startTime).inMinutes;
+    } else {
+      duration = 30; // Default duration
+    }
+    
+    final durationString = _formatDuration(duration);
+    
+    // Determine if event is upcoming or past
+    final now = DateTime.now();
+    final isUpcoming = event.startTime.isAfter(now);
+    final isOngoing = event.startTime.isBefore(now) && 
+      event.startTime.add(Duration(minutes: duration)).isAfter(now);
+
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Row(
         children: [
-          // Time
-          Text(
-            DateFormat('HH:mm').format(event.startTime),
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(width: 16),
-          // Accent Bar
-          Container(
-            width: 4,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppTheme.accentBlue,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 16),
-          // Details
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,24 +99,39 @@ class _EventCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.access_time, size: 14, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${event.durationMinutes} min',
-                      style: const TextStyle(
-                        color: Colors.grey,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+                Text(
+                  '$timeString · $durationString',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 13,
+                  ),
                 ),
               ],
+            ),
+          ),
+          // Status indicator
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isOngoing 
+                ? Colors.green 
+                : (isUpcoming ? AppTheme.accentBlue : Colors.grey.shade400),
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _formatDuration(int minutes) {
+    if (minutes < 60) {
+      return '${minutes}m';
+    } else if (minutes % 60 == 0) {
+      return '${minutes ~/ 60}h';
+    } else {
+      return '${minutes ~/ 60}h ${minutes % 60}m';
+    }
   }
 }

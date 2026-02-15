@@ -38,6 +38,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>My Day needs microphone access to understand your voice commands for adding events, tasks, and notes.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>My Day uses speech recognition to convert your voice commands into text.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

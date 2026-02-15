@@ -28,7 +28,7 @@ class FloatingAIButton extends ConsumerWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF8B7CF6).withOpacity(0.3),
+                color: const Color(0xFF8B7CF6).withValues(alpha: 0.3),
                 blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
@@ -99,7 +99,7 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.95),
+        color: Colors.white.withValues(alpha: 0.95),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
@@ -195,7 +195,7 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, -2),
                 ),
@@ -253,7 +253,7 @@ class _AIChatOverlayState extends ConsumerState<AIChatOverlay> {
             height: 80,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Color(0xFF8B7CF6).withOpacity(0.1),
+              color: const Color(0xFF8B7CF6).withValues(alpha: 0.1),
             ),
             child: const Icon(
               Icons.auto_awesome,
